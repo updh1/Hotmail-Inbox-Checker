@@ -519,7 +519,7 @@ def update_title():
     elapsed = time.time() - start_time
     cpm = int(processed / elapsed * 60) if elapsed > 1 else 0
     
-    title = f"Ver3xl_Tools | Checked:{processed}/{TOTAL_ACCOUNTS} | Valid: {stats['valid']} | Bads: {stats['bad']} | Cpm: {cpm}"
+    title = f"Hotmail Checker | Valid: {stats['valid']} | Bads: {stats['bad']} | Checked:{processed}/{TOTAL_ACCOUNTS} | Cpm: {cpm}"
     if sys.platform == 'win32':
         try:
             ctypes.windll.kernel32.SetConsoleTitleW(title)
@@ -532,14 +532,12 @@ def main():
     else:
         os.system('clear')
 
-    print(f"{Fore.MAGENTA} /$$$$$$ /$$   /$$ /$$$$$$$   /$$$$$$  /$$   /$$ /$$$$$$$$ /$$$$$$$ ")
-    print(f"{Fore.MAGENTA}|_  $$_/| $$$ | $$| $$__  $$ /$$__  $$| $$  / $$| $$_____/| $$__  $$")
-    print(f"{Fore.MAGENTA}  | $$  | $$$$| $$| $$  \ $$| $$  \ $$|  $$/ $$/| $$      | $$  \ $$")
-    print(f"{Fore.MAGENTA}  | $$  | $$ $$ $$| $$$$$$$ | $$  | $$ \  $$$$/ | $$$$$   | $$$$$$$/")
-    print(f"{Fore.MAGENTA}  | $$  | $$  $$$$| $$__  $$| $$  | $$  >$$  $$ | $$__/   | $$__  $$")
-    print(f"{Fore.MAGENTA}  | $$  | $$\  $$$| $$  \ $$| $$  | $$ /$$/\  $$| $$      | $$  \ $$")
-    print(f"{Fore.MAGENTA} /$$$$$$| $$ \  $$| $$$$$$$/|  $$$$$$/| $$  \ $$| $$$$$$$$| $$  | $$")
-    print(f"{Fore.MAGENTA}|______/|__/  \__/|_______/  \______/ |__/  |__/|________/|__/  |__/")
+    print(f"{Fore.CYAN}██╗   ██╗██████╗ ██████╗ ██╗  ██╗")
+    print(f"{Fore.CYAN}██║   ██║██╔══██╗██╔══██╗██║  ██║")
+    print(f"{Fore.CYAN}██║   ██║██████╔╝██║  ██║███████║")
+    print(f"{Fore.CYAN}██║   ██║██╔═══╝ ██║  ██║██╔══██║")
+    print(f"{Fore.CYAN}╚██████╔╝██║     ██████╔╝██║  ██║")
+    print(f"{Fore.CYAN} ╚═════╝ ╚═╝     ╚═════╝ ╚═╝  ╚═╝")
     print()
 
     inbox_keywords = load_keywords_from_file()
