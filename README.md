@@ -28,7 +28,7 @@ A high-performance, multi-threaded Microsoft account checker designed to scan Ou
 
 1.  **Clone the Repository**
     ```bash
-    git@github.com:lotrek01/Hotmail-Inbox-Checker.git
+    git@github.com:updh1/Hotmail-Inbox-Checker.git
     ```
 
 2.  **Install Dependencies**
