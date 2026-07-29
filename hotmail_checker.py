@@ -17,6 +17,8 @@ from requests.adapters import HTTPAdapter
 from collections import deque
 from urllib3.util.retry import Retry
 from colorama import Fore, Style, init
+from tkinter import filedialog, Tk
+from pathlib import Path
 
 init(autoreset=True)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -113,6 +115,34 @@ def load_and_normalize_accounts(filepath):
     
     return accounts
 
+def remove_duplicates(accounts):
+    seen = set()
+    unique_accounts = []
+    duplicates = 0
+    
+    for acc in accounts:
+        if acc not in seen:
+            seen.add(acc)
+            unique_accounts.append(acc)
+        else:
+            duplicates += 1
+    
+    if duplicates > 0:
+        print(f"{Fore.YELLOW}[!] Removed {duplicates} duplicate accounts{Style.RESET_ALL}")
+    
+    return unique_accounts
+
+def select_combo_file():
+    root = Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    file_path = filedialog.askopenfilename(
+        title="Select combo file (email:password)",
+        filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+    )
+    root.destroy()
+    return file_path
+
 if sys.platform == 'win32':
     os.system('cls')
     try:
@@ -208,8 +238,7 @@ class ConfigLoader:
         self.config['General'] = {
             'threads': '100',
             'timeout': '15',
-            'proxies_file': 'proxies.txt',
-            'accounts_file': 'acc.txt'
+            'proxies_file': 'proxies.txt'
         }
         with open(self.config_file, 'w', encoding='utf-8') as f:
             self.config.write(f)
@@ -218,7 +247,6 @@ class ConfigLoader:
         self.settings['threads'] = self.config.getint('General', 'threads', fallback=100)
         self.settings['timeout'] = self.config.getint('General', 'timeout', fallback=15)
         self.settings['proxies_file'] = self.config.get('General', 'proxies_file', fallback='proxies.txt')
-        self.settings['accounts_file'] = self.config.get('General', 'accounts_file', fallback='acc.txt')
 
 config_loader = ConfigLoader()
 CONFIG = config_loader.settings
@@ -744,7 +772,7 @@ def update_title():
     elapsed = time.time() - start_time
     cpm = int(processed / elapsed * 60) if elapsed > 1 else 0
     
-    title = f"Hotmail Checker | Valid: {stats['valid']} | Inbox: {stats['inbox']} | 2FA: {stats['2fa']} | Bad: {stats['bad']} | Checked:{processed}/{TOTAL_ACCOUNTS} | Cpm: {cpm}"
+    title = f"Hotmail Checker  | Valid: {stats['valid']} | Inbox: {stats['inbox']} | 2FA: {stats['2fa']} | Bad: {stats['bad']} | Checked:{processed}/{TOTAL_ACCOUNTS} | Cpm: {cpm}"
     if sys.platform == 'win32':
         try:
             ctypes.windll.kernel32.SetConsoleTitleW(title)
@@ -757,21 +785,26 @@ def main():
     else:
         os.system('clear')
 
-    print(f"{Fore.CYAN}██╗   ██╗██████╗ ██████╗ ██╗  ██╗")
-    print(f"{Fore.CYAN}██║   ██║██╔══██╗██╔══██╗██║  ██║")
-    print(f"{Fore.CYAN}██║   ██║██████╔╝██║  ██║███████║")
-    print(f"{Fore.CYAN}██║   ██║██╔═══╝ ██║  ██║██╔══██║")
-    print(f"{Fore.CYAN}╚██████╔╝██║     ██████╔╝██║  ██║")
-    print(f"{Fore.CYAN} ╚═════╝ ╚═╝     ╚═════╝ ╚═╝  ╚═╝")
+    print(f"{Fore.LIGHTBLUE_EX}██╗   ██╗██████╗ ██████╗ ██╗  ██╗")
+    print(f"{Fore.LIGHTBLUE_EX}██║   ██║██╔══██╗██╔══██╗██║  ██║")
+    print(f"{Fore.LIGHTBLUE_EX}██║   ██║██████╔╝██║  ██║███████║")
+    print(f"{Fore.LIGHTBLUE_EX}██║   ██║██╔═══╝ ██║  ██║██╔══██║")
+    print(f"{Fore.LIGHTBLUE_EX}╚██████╔╝██║     ██████╔╝██║  ██║")
+    print(f"{Fore.LIGHTBLUE_EX} ╚═════╝ ╚═╝     ╚═════╝ ╚═╝  ╚═╝")
     print()
 
     inbox_keywords = load_keywords_from_file()
     get_session_folder()
-    
-    print(f"{Fore.CYAN}[*] Session folder: {get_session_folder()}")
-    print(f"{Fore.CYAN}[*] Graph API enabled for faster inbox checking")
-    print(f"{Fore.CYAN}[*] Loaded {len(inbox_keywords)} keywords")
+    print(f"{Fore.WHITE}[*] Loaded {len(inbox_keywords)} keywords")
     print()
+
+    print(f"{Fore.YELLOW}[*] Opening file dialog to select combo file...{Style.RESET_ALL}")
+    accounts_file = select_combo_file()
+    
+    if not accounts_file:
+        print(f"{Fore.RED}[!] No file selected. Exiting.{Style.RESET_ALL}")
+        input(f"{Fore.YELLOW}[*] Press Enter to exit...{Style.RESET_ALL}")
+        return
 
     global proxies
     proxies = []
@@ -784,22 +817,20 @@ def main():
     else:
         print(f"{Fore.YELLOW}[!] Proxies file not found: {CONFIG['proxies_file']}")
 
-    if not os.path.exists(CONFIG['accounts_file']):
-        print(f"{Fore.RED}[!] Accounts file not found: {CONFIG['accounts_file']}")
-        with open(CONFIG['accounts_file'], 'w') as f:
-            f.write("email:pass\n")
-        print(f"{Fore.YELLOW}[*] Created dummy {CONFIG['accounts_file']}. Please add accounts.")
-        return
-
-    accounts = load_and_normalize_accounts(CONFIG['accounts_file'])
+    print(f"{Fore.YELLOW}[*] Loading accounts and removing duplicates...{Style.RESET_ALL}")
+    accounts = load_and_normalize_accounts(accounts_file)
+    accounts = remove_duplicates(accounts)
     
     if not accounts:
+        print(f"{Fore.RED}[!] No valid accounts found in the file!{Style.RESET_ALL}")
+        input(f"{Fore.YELLOW}[*] Press Enter to exit...{Style.RESET_ALL}")
         return
 
     global TOTAL_ACCOUNTS
     TOTAL_ACCOUNTS = len(accounts)
     
     print(f"{Fore.CYAN}[*] Threads: {CONFIG['threads']}")
+    print(f"{Fore.CYAN}[*] Total accounts: {TOTAL_ACCOUNTS}")
     print()
 
     def ui_loop():
